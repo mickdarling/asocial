@@ -7,7 +7,7 @@
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
+		"prepare": "svelte-kit sync || echo 'Note: svelte-kit sync skipped (expected before project setup)'",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "eslint .",
@@ -38,6 +38,7 @@
 		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.50.1",
 		"vite": "^7.2.6",
+		"@vitest/coverage-v8": "^4.0.16",
 		"vitest": "^4.0.16"
 	}
 }

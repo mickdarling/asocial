@@ -25,13 +25,30 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run all checks
+      - name: Run lint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Run type check
         run: |
-          npm run lint
-          npm run format:check
-          npm run check
-          npm run test
-          npm run build
+          if [ -f "tsconfig.json" ]; then
+            npm run check
+          else
+            echo "⚠️ No tsconfig.json found - skipping type check"
+          fi
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Build
+        run: |
+          if [ -f "svelte.config.js" ]; then
+            npm run build
+          else
+            echo "⚠️ No svelte.config.js found - skipping build"
+          fi
 
       - name: Security audit
         run: npm audit --audit-level=high

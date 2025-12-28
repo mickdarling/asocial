@@ -6,6 +6,8 @@ on:
   push:
     branches: [develop]
 
+# Cancel in-progress runs when a new commit is pushed to the same branch
+# This saves CI minutes by not running stale builds
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -136,20 +138,36 @@ jobs:
   sql-check:
     name: SQL Syntax Check
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' &&
-      contains(github.event.pull_request.changed_files, 'db/')
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Check for SQL file changes
+        id: sql-changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            sql:
+              - 'src/lib/db/**/*.sql'
+              - 'db/**/*.sql'
+
+      - name: Install sqlfluff
+        if: steps.sql-changes.outputs.sql == 'true'
+        run: pip install sqlfluff
 
       - name: Check SQL syntax
+        if: steps.sql-changes.outputs.sql == 'true'
         run: |
-          for f in $(find src/lib/db -name "*.sql" 2>/dev/null); do
-            echo "Checking $f..."
-            # Basic syntax check using psql's parser
-            psql -h localhost -U postgres -f "$f" --set ON_ERROR_STOP=1 -c "" 2>&1 || echo "Note: $f may need a database connection for full validation"
-          done
-        continue-on-error: true # SQL files may reference extensions not available
+          SQL_FILES=$(find src/lib/db db -name "*.sql" 2>/dev/null || true)
+          if [ -n "$SQL_FILES" ]; then
+            echo "Checking SQL files with sqlfluff..."
+            sqlfluff lint $SQL_FILES --dialect postgres || echo "⚠️ SQL linting found issues (non-blocking)"
+          else
+            echo "No SQL files found to check"
+          fi
+        continue-on-error: true
+
+      - name: Skip message
+        if: steps.sql-changes.outputs.sql != 'true'
+        run: echo "⏭️ No SQL file changes detected - skipping SQL check"
