@@ -162,21 +162,27 @@ SQLite replicated across edge locations, libSQL-based.
 
 **For your situation, I'd suggest a phased approach:**
 
-```
-Phase 1 (Now - Development):
-├── SQLite locally for rapid iteration
-├── Or PostgreSQL on M1 Max if you want production parity
-└── Cloudflare D1 if you want to go all-in on CF Workers
+```mermaid
+flowchart TB
+    subgraph Phase1["Phase 1: Development"]
+        P1A[SQLite locally - rapid iteration]
+        P1B[Or PostgreSQL on M1 Max - production parity]
+        P1C[Or Cloudflare D1 - all-in on CF Workers]
+    end
 
-Phase 2 (Beta - Few Users):
-├── PostgreSQL on M1 Max via Cloudflare Tunnel
-├── Add pgvector for AI memory
-└── Redis for caching (can run on same machine)
+    subgraph Phase2["Phase 2: Beta - Few Users"]
+        P2A[PostgreSQL on M1 Max via CF Tunnel]
+        P2B[Add pgvector for AI memory]
+        P2C[Redis for caching - same machine]
+    end
 
-Phase 3 (Growth):
-├── Migrate to managed PostgreSQL (Supabase, Neon, or Railway)
-├── Or keep self-hosted but add proper backups/monitoring
-└── Consider read replicas if needed
+    subgraph Phase3["Phase 3: Growth"]
+        P3A[Migrate to managed PostgreSQL]
+        P3B[Or keep self-hosted + backups/monitoring]
+        P3C[Consider read replicas]
+    end
+
+    Phase1 --> Phase2 --> Phase3
 ```
 
 ---
@@ -318,15 +324,19 @@ Lightweight server framework with hypermedia.
 
 **For your situation:**
 
-```
-If you want mature ecosystem + hiring potential:
-└── Next.js (can deploy to Cloudflare via next-on-pages or static export)
+```mermaid
+flowchart LR
+    subgraph Choice["Frontend Choice"]
+        direction TB
+        Q1{Priority?}
+        Q1 -->|Mature ecosystem| Next[Next.js]
+        Q1 -->|Simpler + CF-native| Svelte[SvelteKit]
+        Q1 -->|Fastest prototype| Hono[Hono + htmx]
 
-If you want simpler + Cloudflare-native:
-└── SvelteKit (excellent Cloudflare adapter, simpler than React)
-
-If you want fastest prototype + minimal complexity:
-└── Hono + htmx (perfect for CF Workers, very lightweight)
+        Next -->|Deploy to| CFPages1[Cloudflare Pages]
+        Svelte -->|Deploy to| CFPages2[Cloudflare Pages]
+        Hono -->|Deploy to| CFWorkers[Cloudflare Workers]
+    end
 ```
 
 **My suggestion:** SvelteKit or Hono+htmx for your initial development. Both work great with Cloudflare, are simpler than React, and let you iterate quickly. SvelteKit if you want a more "standard" SPA feel, Hono+htmx if you want maximum simplicity.
@@ -402,10 +412,13 @@ Use Workers at the edge, home server for heavy lifting.
 | **Your Setup** | Leverages all your infrastructure |
 
 **Architecture:**
-```
-User → Cloudflare Workers (edge, fast, simple operations)
-           ↓
-       Cloudflare Tunnel → M1 Max (heavy operations, DB)
+
+```mermaid
+flowchart LR
+    User([User]) --> CFWorkers[Cloudflare Workers]
+    CFWorkers -->|Edge: fast, simple ops| CFWorkers
+    CFWorkers -->|Cloudflare Tunnel| M1Max[M1 Max Server]
+    M1Max -->|Heavy ops, DB, AI| M1Max
 ```
 
 **Pros:**
@@ -425,17 +438,24 @@ User → Cloudflare Workers (edge, fast, simple operations)
 
 **For your situation:**
 
-```
-Phase 1: All on M1 Max via Cloudflare Tunnel
-├── Simple: one deployment target
-├── Full Node.js power
-├── Direct PostgreSQL access
-└── Easy to iterate
+```mermaid
+flowchart TB
+    subgraph Phase1["Phase 1: All on M1 Max"]
+        direction LR
+        P1A[Simple: one target]
+        P1B[Full Node.js power]
+        P1C[Direct PostgreSQL]
+        P1D[Easy iteration]
+    end
 
-Phase 2: Hybrid
-├── Move static/simple operations to Workers
-├── Keep AI generation and DB on home server
-└── Better performance, more resilient
+    subgraph Phase2["Phase 2: Hybrid"]
+        direction LR
+        P2A[Static/simple → Workers]
+        P2B[AI + DB → Home server]
+        P2C[Better performance]
+    end
+
+    Phase1 --> Phase2
 ```
 
 ---
@@ -536,18 +556,24 @@ Serverless Redis, accessible from anywhere.
 
 ### Caching Recommendation
 
-```
-Phase 1: No cache
-└── Just use PostgreSQL, it's fast
+```mermaid
+flowchart TB
+    subgraph Phase1["Phase 1: No Cache"]
+        P1[Just use PostgreSQL - it's fast]
+    end
 
-Phase 2: Redis on M1 Max
-├── Cache hot feeds
-├── Rate limiting
-├── Session storage
-└── Real-time pub/sub for live updates
+    subgraph Phase2["Phase 2: Redis on M1 Max"]
+        P2A[Cache hot feeds]
+        P2B[Rate limiting]
+        P2C[Session storage]
+        P2D[Real-time pub/sub]
+    end
 
-Phase 3: Upstash (if going more serverless)
-└── Edge-accessible cache for Workers
+    subgraph Phase3["Phase 3: Upstash - if serverless"]
+        P3[Edge-accessible cache for Workers]
+    end
+
+    Phase1 --> Phase2 --> Phase3
 ```
 
 ---
@@ -570,10 +596,24 @@ Your AI model for responses and analysis.
 - **Opus**: Best quality, expensive, for complex analysis
 
 **Strategy:**
-```
-Constructiveness scoring → Haiku (fast, cheap)
-AI persona responses → Sonnet (good quality)
-Complex content analysis → Opus (when needed)
+
+```mermaid
+flowchart LR
+    subgraph Tasks["Task Type"]
+        T1[Constructiveness scoring]
+        T2[AI persona responses]
+        T3[Complex content analysis]
+    end
+
+    subgraph Models["Claude Model"]
+        M1[Haiku - fast, cheap]
+        M2[Sonnet - good quality]
+        M3[Opus - best quality]
+    end
+
+    T1 --> M1
+    T2 --> M2
+    T3 --> M3
 ```
 
 ---
@@ -601,27 +641,45 @@ Run open models locally on your hardware.
 - Need to manage models
 
 **Strategy:**
-```
-Development/testing → Local Ollama
-Routine tasks → Local Ollama
-High-quality responses → Claude API (when it matters)
+
+```mermaid
+flowchart LR
+    subgraph Use["Use Case"]
+        U1[Development/testing]
+        U2[Routine tasks]
+        U3[High-quality responses]
+    end
+
+    subgraph Provider["AI Provider"]
+        P1[Local Ollama - free]
+        P2[Claude API - quality]
+    end
+
+    U1 --> P1
+    U2 --> P1
+    U3 --> P2
 ```
 
 ---
 
 ### AI Recommendation
 
-```
-Development: Ollama on M1 Max
-├── Llama 3.1 8B for fast iteration
-├── Mistral 7B as alternative
-└── Free, no API costs while developing
+```mermaid
+flowchart TB
+    subgraph Dev["Development: Ollama on M1 Max"]
+        D1[Llama 3.1 8B - fast iteration]
+        D2[Mistral 7B - alternative]
+        D3[Free - no API costs]
+    end
 
-Production: Hybrid
-├── Haiku for constructiveness scoring
-├── Local Ollama for bulk AI persona posts
-├── Sonnet for user-facing responses
-└── Saves money while maintaining quality where it matters
+    subgraph Prod["Production: Hybrid Approach"]
+        P1[Haiku → Constructiveness scoring]
+        P2[Ollama → Bulk AI persona posts]
+        P3[Sonnet → User-facing responses]
+        P4[Result: Save money + quality where it matters]
+    end
+
+    Dev --> Prod
 ```
 
 ---
@@ -630,32 +688,35 @@ Production: Hybrid
 
 ### Recommended Architecture for Your Situation
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Cloudflare (Edge)                         │
-│                                                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │   Pages     │  │   Workers   │  │     KV      │         │
-│  │  (Static)   │  │  (API edge) │  │  (Sessions) │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-│                          │                                   │
-│                   Cloudflare Tunnel                         │
-└─────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│               Mac Studio M1 Max (Home Server)                │
-│                                                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │  Node.js    │  │ PostgreSQL  │  │    Redis    │         │
-│  │   Server    │  │ + pgvector  │  │   (cache)   │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-│                                                              │
-│  ┌─────────────┐  ┌─────────────┐                          │
-│  │   Ollama    │  │   Zulip     │                          │
-│  │  (Local AI) │  │ (existing)  │                          │
-│  └─────────────┘  └─────────────┘                          │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Internet["Internet"]
+        User([Users])
+    end
+
+    subgraph Cloudflare["Cloudflare Edge"]
+        Pages[Pages<br/>Static Assets]
+        Workers[Workers<br/>API Edge]
+        KV[KV<br/>Sessions]
+        Tunnel[Cloudflare Tunnel]
+    end
+
+    subgraph HomeServer["Mac Studio M1 Max - Home Server"]
+        Node[Node.js Server]
+        PG[(PostgreSQL<br/>+ pgvector)]
+        Redis[(Redis<br/>Cache)]
+        Ollama[Ollama<br/>Local AI]
+        Zulip[Zulip<br/>existing]
+    end
+
+    User --> Pages
+    User --> Workers
+    Workers --> KV
+    Workers --> Tunnel
+    Tunnel --> Node
+    Node --> PG
+    Node --> Redis
+    Node --> Ollama
 ```
 
 ### Cost Breakdown (Initial Phase)
@@ -674,61 +735,91 @@ Production: Hybrid
 
 ### Path to Production Scale
 
-```
-Phase 1: Home server (Now)
-├── All services on M1 Max
-├── Cloudflare Tunnel for access
-├── Few users, development focus
-└── Cost: ~$5/mo (Claude API only)
+```mermaid
+flowchart TB
+    subgraph P1["Phase 1: Home Server - Now"]
+        direction LR
+        P1A[All services on M1 Max]
+        P1B[CF Tunnel for access]
+        P1C[Few users, dev focus]
+        P1D[Cost: ~$5/mo]
+    end
 
-Phase 2: Hybrid (10-100 users)
-├── Static assets → Cloudflare Pages
-├── Simple API → Cloudflare Workers
-├── Heavy lifting → Home server
-└── Cost: ~$20-50/mo
+    subgraph P2["Phase 2: Hybrid - 10-100 users"]
+        direction LR
+        P2A[Static → CF Pages]
+        P2B[Simple API → Workers]
+        P2C[Heavy lifting → Home]
+        P2D[Cost: ~$20-50/mo]
+    end
 
-Phase 3: Cloud migration (100+ users)
-├── Database → Managed PostgreSQL (Neon, Supabase, etc.)
-├── Workers → More edge logic
-├── Consider dedicated hosting for workers
-└── Cost: ~$50-200/mo
+    subgraph P3["Phase 3: Cloud Migration - 100+ users"]
+        direction LR
+        P3A[DB → Managed PostgreSQL]
+        P3B[More edge logic]
+        P3C[Dedicated worker hosting]
+        P3D[Cost: ~$50-200/mo]
+    end
 
-Phase 4: Scale (1000+ users)
-├── Full cloud infrastructure
-├── Multiple regions
-├── CDN for media
-└── Cost: Scales with usage
+    subgraph P4["Phase 4: Scale - 1000+ users"]
+        direction LR
+        P4A[Full cloud infrastructure]
+        P4B[Multiple regions]
+        P4C[CDN for media]
+        P4D[Cost: Scales with usage]
+    end
+
+    P1 --> P2 --> P3 --> P4
 ```
 
 ---
 
 ## Recommended Starting Stack
 
+```mermaid
+flowchart LR
+    subgraph Frontend["Frontend"]
+        FE[SvelteKit or Hono+htmx]
+        FE --> CFPages[Cloudflare Pages]
+    end
+
+    subgraph Backend["Backend"]
+        BE[Node.js + Hono]
+        BE --> M1_1[M1 Max via CF Tunnel]
+    end
+
+    subgraph Database["Database"]
+        DB[(PostgreSQL + pgvector)]
+        DB --> M1_2[M1 Max]
+    end
+
+    subgraph Cache["Cache - add later"]
+        C[(Redis)]
+        C --> M1_3[M1 Max]
+    end
+
+    subgraph AI["AI"]
+        AI1[Ollama - dev]
+        AI2[Claude API - prod]
+        AI1 --> M1_4[M1 Max]
+    end
+
+    subgraph Realtime["Real-time"]
+        RT[WebSockets]
+        RT --> Node[Node.js server]
+    end
+
+    subgraph Media["Media Storage"]
+        R2[(Cloudflare R2)]
+        R2 --> Free[Free egress]
+    end
 ```
-Frontend:     SvelteKit (or Hono + htmx for simpler)
-              └── Deploy to Cloudflare Pages
 
-Backend:      Node.js + Hono (or Express/Fastify)
-              └── Run on M1 Max, expose via CF Tunnel
+**This gives you:**
 
-Database:     PostgreSQL + pgvector
-              └── Run on M1 Max
-
-Cache:        Redis (add later if needed)
-              └── Run on M1 Max
-
-AI:           Ollama (development) + Claude API (production)
-              └── Ollama on M1 Max
-
-Real-time:    WebSockets via Node.js server
-              └── Or Cloudflare Durable Objects later
-
-Media:        Cloudflare R2 (S3-compatible)
-              └── Free egress, generous free tier
+```mermaid
+flowchart LR
+    A[Free/cheap development] --> B[Your existing infrastructure]
+    B --> C[Clear migration path]
+    C --> D[Modern stack that scales]
 ```
-
-This gives you:
-- **Free/cheap development** environment
-- **Your existing infrastructure** (Cloudflare, home server)
-- **Clear migration path** to cloud when needed
-- **Modern stack** that scales

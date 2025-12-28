@@ -23,45 +23,111 @@
 
 ### Recommended: Hybrid Approach
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Primary Data Store                       │
-│                      PostgreSQL/Supabase                     │
-│  - Users, profiles, settings                                │
-│  - AI Personas (definitions, memory)                        │
-│  - Relationships, follows, blocks                           │
-│  - Federation state (ActivityPub actors, keys)              │
-└─────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────────┐
-│                      Feed/Post Store                         │
-│                   TimescaleDB or ScyllaDB                    │
-│  - Posts (user and AI generated)                            │
-│  - Time-series optimized                                    │
-│  - Partitioned by user + time                               │
-│  - Years of history, efficient range queries                │
-└─────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────────┐
-│                        Cache Layer                           │
-│                          Redis                               │
-│  - Hot feeds (recent posts)                                 │
-│  - Session data                                             │
-│  - Rate limiting                                            │
-│  - Real-time pub/sub for live updates                       │
-└─────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────────┐
-│                      AI Memory Store                         │
-│                    Vector DB (pgvector)                      │
-│  - Persona conversation history                             │
-│  - Semantic search for context                              │
-│  - What topics has this persona discussed?                  │
-│  - Propaganda technique tracking                            │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Primary["Primary Data Store - PostgreSQL/Supabase"]
+        P1[Users, profiles, settings]
+        P2[AI Personas - definitions, memory]
+        P3[Relationships, follows, blocks]
+        P4[Federation state - ActivityPub actors, keys]
+    end
+
+    subgraph Feed["Feed/Post Store - TimescaleDB or ScyllaDB"]
+        F1[Posts - user and AI generated]
+        F2[Time-series optimized]
+        F3[Partitioned by user + time]
+        F4[Years of history, efficient range queries]
+    end
+
+    subgraph Cache["Cache Layer - Redis"]
+        C1[Hot feeds - recent posts]
+        C2[Session data]
+        C3[Rate limiting]
+        C4[Real-time pub/sub for live updates]
+    end
+
+    subgraph AI["AI Memory Store - pgvector"]
+        A1[Persona conversation history]
+        A2[Semantic search for context]
+        A3[Topics discussed tracking]
+        A4[Propaganda technique tracking]
+    end
+
+    Primary --> Feed
+    Feed --> Cache
+    Cache --> AI
 ```
 
 ## Core Data Models
+
+### Entity Relationship Diagram
+
+```mermaid
+erDiagram
+    USER ||--o{ POST : creates
+    USER ||--o{ CONNECTED_ACCOUNT : has
+    USER ||--o{ USER_PERSONA_ASSIGNMENT : has
+    USER ||--o{ INTERACTION : performs
+    USER ||--o{ USER_FEED_STATE : has
+
+    AI_PERSONA ||--o{ POST : creates
+    AI_PERSONA ||--o{ USER_PERSONA_ASSIGNMENT : assigned_to
+
+    POST ||--o{ POST : replies_to
+    POST ||--o{ VALIDATED_LINK : contains
+    POST ||--o{ MEDIA_ATTACHMENT : has
+    POST ||--o{ INTERACTION : receives
+    POST ||--o{ SHARE : shared_as
+
+    SHARE ||--|| POST : creates_new_post
+    SHARE ||--o{ BRIDGED_POST : bridges_to
+
+    USER {
+        uuid id PK
+        string username
+        string email
+        string display_name
+        enum ui_style
+        string activitypub_actor_id
+        string atproto_did
+    }
+
+    POST {
+        uuid id PK
+        string uri
+        enum author_type
+        uuid author_id FK
+        uuid target_user_id FK
+        string content_text
+        uuid reply_to_id FK
+        enum visibility
+        float constructiveness_score
+        boolean eligible_for_bridge
+    }
+
+    AI_PERSONA {
+        uuid id PK
+        string handle
+        string display_name
+        json personality
+        string memory_summary
+        array topics_discussed
+    }
+
+    INTERACTION {
+        uuid id PK
+        uuid user_id FK
+        uuid post_id FK
+        enum type
+    }
+
+    SHARE {
+        uuid id PK
+        uuid original_post_id FK
+        uuid sharing_post_id FK
+        uuid shared_by_user_id FK
+    }
+```
 
 ### User
 ```typescript
@@ -257,14 +323,19 @@ interface Share {
 
 Asocial acts as an ActivityPub server:
 
-```
-┌─────────────────┐         ┌─────────────────┐
-│    Asocial      │ ◄─────► │    Mastodon     │
-│                 │         │    Instance     │
-│  Actor: User    │         │                 │
-│  Outbox: Posts  │         │                 │
-│  Inbox: Replies │         │                 │
-└─────────────────┘         └─────────────────┘
+```mermaid
+flowchart LR
+    subgraph Asocial["Asocial"]
+        Actor[Actor: User]
+        Outbox[Outbox: Posts]
+        Inbox[Inbox: Replies]
+    end
+
+    subgraph Mastodon["Mastodon Instance"]
+        MastodonServer[Remote Server]
+    end
+
+    Asocial <--> Mastodon
 ```
 
 **Outbound (Push):**
@@ -280,13 +351,19 @@ Asocial acts as an ActivityPub server:
 
 ### AT Protocol (Bluesky)
 
-```
-┌─────────────────┐         ┌─────────────────┐
-│    Asocial      │ ◄─────► │    Bluesky      │
-│                 │         │    Network      │
-│  PDS: User data │         │                 │
-│  Repo: Posts    │         │                 │
-└─────────────────┘         └─────────────────┘
+```mermaid
+flowchart LR
+    subgraph Asocial["Asocial"]
+        PDS[PDS: User data]
+        Repo[Repo: Posts]
+    end
+
+    subgraph Bluesky["Bluesky Network"]
+        BGS[BGS - Relay]
+        AppView[App View]
+    end
+
+    Asocial <--> Bluesky
 ```
 
 **Options:**
@@ -342,36 +419,45 @@ Start with PWA, wrap in Capacitor/Tauri for app stores later.
 
 ## Hosting Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           CDN (Cloudflare)                          │
-│                     Static assets, edge caching                     │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Load Balancer                                 │
-└─────────────────────────────────────────────────────────────────────┘
-            │                       │                       │
-┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐
-│   Web/API Tier    │   │   Web/API Tier    │   │   Web/API Tier    │
-│   (Containers)    │   │   (Containers)    │   │   (Containers)    │
-└───────────────────┘   └───────────────────┘   └───────────────────┘
-            │                       │                       │
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Message Queue                                │
-│                    (Redis Streams / BullMQ)                         │
-│           AI generation, federation, validation jobs                 │
-└─────────────────────────────────────────────────────────────────────┘
-            │                       │                       │
-┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐
-│   Worker Tier     │   │   Worker Tier     │   │   Worker Tier     │
-│  AI Generation    │   │   Federation      │   │  Link Validation  │
-└───────────────────┘   └───────────────────┘   └───────────────────┘
-            │                       │                       │
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Data Tier                                     │
-│   PostgreSQL (primary) │ Redis (cache) │ S3 (media) │ pgvector     │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph CDN["CDN - Cloudflare"]
+        Static[Static assets, edge caching]
+    end
+
+    subgraph LB["Load Balancer"]
+        LoadBalancer[Traffic Distribution]
+    end
+
+    subgraph WebTier["Web/API Tier"]
+        Web1[Container 1]
+        Web2[Container 2]
+        Web3[Container 3]
+    end
+
+    subgraph Queue["Message Queue - Redis Streams / BullMQ"]
+        Jobs[AI generation, federation, validation jobs]
+    end
+
+    subgraph Workers["Worker Tier"]
+        W1[AI Generation]
+        W2[Federation]
+        W3[Link Validation]
+    end
+
+    subgraph Data["Data Tier"]
+        PG[(PostgreSQL)]
+        Redis[(Redis Cache)]
+        S3[(S3 Media)]
+        Vector[(pgvector)]
+    end
+
+    CDN --> LB
+    LB --> Web1 & Web2 & Web3
+    Web1 & Web2 & Web3 --> Queue
+    Queue --> W1 & W2 & W3
+    W1 & W2 & W3 --> Data
+    Web1 & Web2 & Web3 --> Data
 ```
 
 ### Platform Options
@@ -413,39 +499,95 @@ Federation:     Custom ActivityPub implementation
 
 ### User Posts Something
 
-```
-1. User submits post
-2. Store in PostgreSQL
-3. Queue AI response generation
-4. Worker generates constructive response using Claude
-5. Store AI response post (linked to user post)
-6. Push real-time update to user's feed
-7. Queue constructiveness analysis
-8. If constructive: queue for federation/bridge
-9. Federation worker sends to Mastodon/Bluesky
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as API Server
+    participant DB as PostgreSQL
+    participant Q as Job Queue
+    participant AI as AI Worker
+    participant Fed as Federation Worker
+    participant Ext as Mastodon/Bluesky
+
+    U->>API: Submit post
+    API->>DB: Store post
+    API->>Q: Queue AI response job
+    API-->>U: Post confirmed
+
+    Q->>AI: Process AI response
+    AI->>DB: Store AI response (linked)
+    AI->>API: Push real-time update
+    API-->>U: Show AI response
+
+    AI->>Q: Queue constructiveness analysis
+    Q->>AI: Analyze constructiveness
+
+    alt Post is constructive
+        AI->>Q: Queue federation job
+        Q->>Fed: Process federation
+        Fed->>Ext: Send to Mastodon/Bluesky
+    end
 ```
 
 ### User Loads Feed
 
-```
-1. Request feed with cursor (timestamp)
-2. Query: user's posts + AI responses + AI persona posts for this user
-3. Check Redis cache for hot posts
-4. Merge with any new federated replies
-5. Return paginated results
-6. Client renders in chosen UI style
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as API Server
+    participant Cache as Redis Cache
+    participant DB as PostgreSQL
+    participant Client as Client App
+
+    U->>API: Request feed (with cursor)
+    API->>Cache: Check hot posts cache
+
+    alt Cache hit
+        Cache-->>API: Return cached posts
+    else Cache miss
+        API->>DB: Query user posts + AI responses + AI persona posts
+        DB-->>API: Return posts
+        API->>Cache: Update cache
+    end
+
+    API->>DB: Check for new federated replies
+    DB-->>API: Return replies
+    API->>API: Merge and paginate
+    API-->>Client: Return feed
+    Client->>Client: Render in chosen UI style
 ```
 
 ### AI Persona Generates Educational Post
 
-```
-1. Scheduler checks: time for propaganda education post?
-2. Query: what techniques hasn't this user seen?
-3. Select technique, select persona
-4. Generate post with validated links
-5. Optionally generate follow-up from second persona
-6. Store posts, update user's propaganda_techniques_shown
-7. Posts appear in user's feed naturally
+```mermaid
+sequenceDiagram
+    participant Sched as Scheduler
+    participant DB as PostgreSQL
+    participant AI as AI Generator
+    participant Val as Link Validator
+    participant Feed as Feed Service
+
+    Sched->>DB: Time for propaganda education post?
+    DB-->>Sched: Check last post timestamp
+
+    alt Time for new post
+        Sched->>DB: What techniques hasn't user seen?
+        DB-->>Sched: Return unseen techniques
+        Sched->>Sched: Select technique & persona
+
+        Sched->>AI: Generate educational post
+        AI->>Val: Validate links
+        Val-->>AI: Links confirmed
+        AI->>DB: Store post
+
+        opt Generate follow-up conversation
+            AI->>AI: Select second persona
+            AI->>DB: Store follow-up post
+        end
+
+        AI->>DB: Update propaganda_techniques_shown
+        AI->>Feed: Add to user's feed
+    end
 ```
 
 ## Scaling Considerations
