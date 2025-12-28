@@ -2,10 +2,103 @@
 
 ## Your Setup
 
-- **Dev Machine**: Mac Studio M4, 128GB RAM
-- **Home Server**: Mac Studio M1 Max, 32GB RAM (running Zulip, accessible via Cloudflare Tunnel)
-- **Existing Infrastructure**: Cloudflare Workers experience, Cloudflare Tunnel
+- **Dev Machine**: Mac Studio M4 Max, 128GB RAM (primary development)
+- **Home Server**: Mac Studio M1 Max, 32GB RAM (staging/production, running Zulip, accessible via Cloudflare Tunnel)
+- **Existing Infrastructure**: Cloudflare Workers, KV Store experience, Cloudflare Tunnel
 - **Goal**: Development environment, few users initially, design for scale
+
+### Development Flow
+
+```mermaid
+flowchart LR
+    Dev[M4 Max<br/>Development] -->|Deploy| Stage[M1 Max<br/>Staging/Prod]
+    Stage -->|Expose via| CF[Cloudflare Tunnel]
+    CF -->|Scale to| Cloud[Cloud Services]
+```
+
+### MVP Target Devices
+
+- Mac (Safari, Chrome)
+- iOS - iPhone 15 Pro Max
+- iPadOS - iPad Pro (older model)
+- **Not targeting Android initially**
+
+Mobile-first responsive web, no native app store deployment for MVP.
+
+---
+
+## Cloudflare Services Deep Dive
+
+### Cloudflare D1 (SQLite at Edge)
+
+| Tier | Storage | Reads/day | Writes/day | Cost |
+|------|---------|-----------|------------|------|
+| **Free** | 5GB | 5M | 100K | $0 |
+| **Paid** | 5GB+ | Beyond free | Beyond free | $0.75/M reads, $1.00/M writes |
+
+**Write budget concern:** 100K writes/day = ~70 writes/minute continuously
+
+For a social app:
+- Each post = 1+ writes
+- Each like/interaction = 1 write
+- AI responses = 1+ writes per user post
+
+**Mitigation strategies:**
+- Batch writes where possible
+- Use KV for high-frequency updates (sessions, counters)
+- Queue writes and flush periodically
+- Keep D1 for durable data, not real-time counters
+
+### Redis vs Cloudflare KV Comparison
+
+```mermaid
+flowchart TB
+    subgraph Redis["Redis (on M1 Max)"]
+        R1[Rich data structures<br/>lists, sets, sorted sets, hashes]
+        R2[Sub-millisecond latency]
+        R3[Strong consistency]
+        R4[Pub/sub, streams]
+        R5[Lua scripting]
+        R6[TCP connection required]
+    end
+
+    subgraph KV["Cloudflare KV"]
+        K1[Simple key-value only]
+        K2[~50ms latency at edge]
+        K3[Eventually consistent<br/>seconds lag on writes]
+        K4[HTTP API<br/>works from Workers]
+        K5[Global replication]
+        K6[100K reads, 1K writes/day free]
+    end
+```
+
+| Use Case | Best Choice | Why |
+|----------|-------------|-----|
+| Session storage | Redis (dev), KV (prod) | Sessions are simple KV, KV works globally |
+| Feed caching | Redis | Need sorted sets, range queries |
+| Rate limiting | Redis (local), KV (edge) | Redis for precision, KV for global edge |
+| Real-time updates | Redis | Pub/sub support |
+| User preferences | KV | Rarely changes, simple structure |
+| Post counters | Redis → periodic sync to D1 | High write frequency |
+
+**Recommendation:** Use both!
+- **Redis on M1 Max** for development and local server operations
+- **Cloudflare KV** for edge operations and Workers
+- Learn KV now since you're using it for DollhouseMCP hosted service
+
+### Supabase Clarification
+
+**Supabase is NOT Google.** It's an independent company (YC-backed) building an open-source Firebase alternative on PostgreSQL.
+
+However, given your preference to avoid new platform UI complexity and your existing Cloudflare experience, we can skip Supabase entirely:
+
+```mermaid
+flowchart LR
+    Skip[Skip Supabase] --> Use[Use instead]
+    Use --> PG[PostgreSQL direct<br/>on M1 Max]
+    Use --> D1[Cloudflare D1<br/>for edge]
+    Use --> KV[Cloudflare KV<br/>already familiar]
+```
 
 ---
 
@@ -580,107 +673,142 @@ flowchart TB
 
 ## AI Integration
 
-### Option 1: Anthropic Claude API
+### Multi-Provider Architecture
 
-Your AI model for responses and analysis.
+Support multiple LLM providers with pluggable API keys:
 
-| Aspect | Details |
-|--------|---------|
-| **Cost** | Claude 3 Haiku: ~$0.25/1M input tokens |
-| **Quality** | Excellent for constructive responses |
-| **Speed** | Fast (especially Haiku) |
+```mermaid
+flowchart TB
+    subgraph App["Asocial AI Layer"]
+        Router[Model Router]
+        Config[API Key Config]
+    end
 
-**Pricing tiers:**
-- **Haiku**: Fastest, cheapest, good for routine tasks
-- **Sonnet**: Balanced, good for most use cases
-- **Opus**: Best quality, expensive, for complex analysis
+    subgraph Providers["LLM Providers"]
+        Anthropic[Anthropic<br/>Claude 3.5/4]
+        OpenAI[OpenAI<br/>GPT-4o]
+        Google[Google<br/>Gemini]
+        Local[Local LLM<br/>Ollama - future]
+    end
 
-**Strategy:**
+    Config --> Router
+    Router --> Anthropic
+    Router --> OpenAI
+    Router --> Google
+    Router -.->|Later| Local
+```
+
+### Provider Comparison
+
+| Provider | Fast Model | Balanced Model | Powerful Model | Input Cost (per 1M tokens) |
+|----------|------------|----------------|----------------|---------------------------|
+| **Anthropic** | Haiku (~$0.25) | Sonnet (~$3) | Opus (~$15) | Excellent quality |
+| **OpenAI** | GPT-4o-mini (~$0.15) | GPT-4o (~$2.50) | GPT-4o (~$2.50) | Good tool use |
+| **Google** | Gemini Flash (~$0.075) | Gemini Pro (~$1.25) | Gemini Ultra | Cheap, good for bulk |
+
+### Task-to-Model Mapping
 
 ```mermaid
 flowchart LR
     subgraph Tasks["Task Type"]
-        T1[Constructiveness scoring]
-        T2[AI persona responses]
-        T3[Complex content analysis]
+        T1[Constructiveness scoring<br/>High volume, simple]
+        T2[AI persona responses<br/>Medium volume, quality matters]
+        T3[Complex analysis<br/>Low volume, highest quality]
+        T4[Link content summarization<br/>High volume, simple]
     end
 
-    subgraph Models["Claude Model"]
-        M1[Haiku - fast, cheap]
-        M2[Sonnet - good quality]
-        M3[Opus - best quality]
+    subgraph Models["Model Tier"]
+        M1[Fast tier<br/>Haiku / GPT-4o-mini / Flash]
+        M2[Balanced tier<br/>Sonnet / GPT-4o / Pro]
+        M3[Powerful tier<br/>Opus / GPT-4o / Ultra]
     end
 
     T1 --> M1
     T2 --> M2
     T3 --> M3
+    T4 --> M1
 ```
 
----
+### Why APIs First, Local Later
 
-### Option 2: Local LLM (Ollama on M1 Max)
+**Your observation is spot-on:** During development, local LLMs require constant "massaging" due to behavior quirks, which distracts from actual development work.
 
-Run open models locally on your hardware.
-
-| Aspect | Details |
-|--------|---------|
-| **Cost** | Free (your hardware) |
-| **Quality** | Good (Llama 3.1, Mistral, etc.) |
-| **Speed** | Moderate (depends on model size) |
-
-**Pros:**
-- No API costs
-- No rate limits
-- Full control
-- Privacy (data doesn't leave your machine)
-- 32GB RAM can run 13B-30B models well
-
-**Cons:**
-- Quality not quite Claude-level
-- Uses your server's resources
-- Need to manage models
-
-**Strategy:**
-
-```mermaid
-flowchart LR
-    subgraph Use["Use Case"]
-        U1[Development/testing]
-        U2[Routine tasks]
-        U3[High-quality responses]
-    end
-
-    subgraph Provider["AI Provider"]
-        P1[Local Ollama - free]
-        P2[Claude API - quality]
-    end
-
-    U1 --> P1
-    U2 --> P1
-    U3 --> P2
-```
-
----
-
-### AI Recommendation
+**Recommended approach:**
 
 ```mermaid
 flowchart TB
-    subgraph Dev["Development: Ollama on M1 Max"]
-        D1[Llama 3.1 8B - fast iteration]
-        D2[Mistral 7B - alternative]
-        D3[Free - no API costs]
+    subgraph Phase1["Phase 1: Development - APIs Only"]
+        P1A[Use Claude/OpenAI APIs]
+        P1B[Budget: $10-20 for experimentation]
+        P1C[Focus on CODE, not AI behavior]
+        P1D[Get the patterns right first]
     end
 
-    subgraph Prod["Production: Hybrid Approach"]
-        P1[Haiku → Constructiveness scoring]
-        P2[Ollama → Bulk AI persona posts]
-        P3[Sonnet → User-facing responses]
-        P4[Result: Save money + quality where it matters]
+    subgraph Phase2["Phase 2: Optimize - Hybrid"]
+        P2A[APIs for quality-critical paths]
+        P2B[Identify bulk/routine operations]
+        P2C[Add local LLM for those specific tasks]
+        P2D[Known good prompts = easier local tuning]
     end
 
-    Dev --> Prod
+    subgraph Phase3["Phase 3: Scale - Cost Optimize"]
+        P3A[Local for high-volume, quality-tolerant]
+        P3B[APIs for user-facing, quality-critical]
+        P3C[Fine-tune local models on good outputs]
+    end
+
+    Phase1 --> Phase2 --> Phase3
 ```
+
+### Configuration Interface
+
+```typescript
+interface AIConfig {
+  providers: {
+    anthropic?: {
+      apiKey: string
+      defaultModel: 'haiku' | 'sonnet' | 'opus'
+    }
+    openai?: {
+      apiKey: string
+      defaultModel: 'gpt-4o-mini' | 'gpt-4o'
+    }
+    google?: {
+      apiKey: string
+      defaultModel: 'flash' | 'pro' | 'ultra'
+    }
+    local?: {
+      baseUrl: string  // e.g., http://localhost:11434
+      defaultModel: string
+    }
+  }
+
+  // Task routing
+  routing: {
+    constructiveness_scoring: { provider: string, tier: 'fast' | 'balanced' | 'powerful' }
+    persona_response: { provider: string, tier: 'fast' | 'balanced' | 'powerful' }
+    content_analysis: { provider: string, tier: 'fast' | 'balanced' | 'powerful' }
+    link_summarization: { provider: string, tier: 'fast' | 'balanced' | 'powerful' }
+  }
+
+  // Budget controls
+  budget?: {
+    daily_limit_usd: number
+    alert_threshold_usd: number
+  }
+}
+```
+
+### Estimated Costs (Development Phase)
+
+| Task | Volume/day | Model | Cost/day |
+|------|-----------|-------|----------|
+| Constructiveness scoring | 100 posts × 500 tokens | Haiku | ~$0.01 |
+| Persona responses | 100 responses × 1000 tokens | Sonnet | ~$0.30 |
+| Link summarization | 50 links × 2000 tokens | Haiku | ~$0.03 |
+| **Total** | | | **~$0.34/day** |
+
+At $10-20 experimentation budget, you have **30-60 days** of active development before needing to optimize.
 
 ---
 

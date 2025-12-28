@@ -233,6 +233,9 @@ interface MediaAttachment {
 ```
 
 ### AI Persona
+
+AI personas leverage the **DollhouseMCP persona specification** for consistency and extensibility. The system acts as an MCP client, connecting to DollhouseMCP server for persona management.
+
 ```typescript
 interface AIPersona {
   id: UUID
@@ -241,7 +244,14 @@ interface AIPersona {
   avatar_url: string
   bio: string
 
-  // Personality definition
+  // DollhouseMCP Integration
+  dollhouse_persona_name: string    // Reference to DollhouseMCP persona
+  mcp_server_config?: {             // Optional custom MCP server
+    server_name: string
+    connection_params: object
+  }
+
+  // Personality definition (can sync from DollhouseMCP)
   personality: {
     traits: string[]                // ["curious", "analytical", "warm"]
     interests: string[]             // ["media literacy", "technology", "cooking"]
@@ -588,6 +598,165 @@ sequenceDiagram
         AI->>DB: Update propaganda_techniques_shown
         AI->>Feed: Add to user's feed
     end
+```
+
+## AI System Architecture
+
+### MCP Client Integration
+
+The AI subsystem is an **MCP client** that connects to:
+
+1. **DollhouseMCP Server** - Persona definitions, activation, memory
+2. **Optional additional MCP servers** - User-extensible for custom capabilities
+
+```mermaid
+flowchart TB
+    subgraph AsocialAI["Asocial AI Subsystem"]
+        AIWorker[AI Worker]
+        MCPClient[MCP Client]
+        ContextBuilder[Context Builder]
+    end
+
+    subgraph MCPServers["MCP Servers"]
+        Dollhouse[DollhouseMCP Server]
+        Custom[Custom MCP Servers]
+    end
+
+    subgraph LLMProviders["LLM Providers"]
+        Anthropic[Anthropic API]
+        OpenAI[OpenAI API]
+        Google[Google API]
+        Local[Local LLM - future]
+    end
+
+    AIWorker --> ContextBuilder
+    ContextBuilder --> MCPClient
+    MCPClient --> Dollhouse
+    MCPClient --> Custom
+    AIWorker --> LLMProviders
+```
+
+### AI Provider Abstraction
+
+Support multiple LLM providers with a unified interface:
+
+```typescript
+interface LLMProvider {
+  name: 'anthropic' | 'openai' | 'google' | 'local'
+
+  // Model selection per task
+  models: {
+    fast: string       // Quick tasks (scoring, simple responses)
+    balanced: string   // Most tasks (persona responses)
+    powerful: string   // Complex analysis
+  }
+
+  // API configuration
+  apiKey: string
+  baseUrl?: string     // For local/custom endpoints
+}
+
+// Example configuration
+const providers = {
+  anthropic: {
+    models: {
+      fast: 'claude-3-haiku-20240307',
+      balanced: 'claude-sonnet-4-20250514',
+      powerful: 'claude-opus-4-20250514'
+    }
+  },
+  openai: {
+    models: {
+      fast: 'gpt-4o-mini',
+      balanced: 'gpt-4o',
+      powerful: 'gpt-4o'
+    }
+  }
+}
+```
+
+### AI Worker Context Requirements
+
+When generating AI responses, the worker needs comprehensive context:
+
+```mermaid
+sequenceDiagram
+    participant W as AI Worker
+    participant CB as Context Builder
+    participant DB as Database
+    participant MCP as DollhouseMCP
+    participant LLM as LLM Provider
+
+    W->>CB: Request context for response
+
+    par Gather Context
+        CB->>DB: Get user's recent posts (last N)
+        CB->>DB: Get user's profile & preferences
+        CB->>DB: Get conversation thread (if reply)
+        CB->>DB: Get persona's post history for this user
+        CB->>MCP: Get persona definition & active state
+    end
+
+    CB->>CB: Build context window
+    CB-->>W: Return assembled context
+
+    W->>LLM: Generate response with context
+    LLM-->>W: Return response
+
+    W->>DB: Store response
+    W->>DB: Update persona memory
+```
+
+**Context includes:**
+
+For **responding to user posts**:
+- The user's post being responded to
+- User's recent post history (tone, topics, patterns)
+- User's profile and preferences
+- Persona's previous interactions with this user
+- Persona's personality definition from DollhouseMCP
+- Conversation thread if this is part of a thread
+
+For **independent persona posts**:
+- Persona's complete post history (compressed/summarized)
+- Topics already covered (avoid repetition)
+- Propaganda techniques already discussed (for educational posts)
+- Current news/content sources (validated links)
+- Time since last post (pacing)
+
+```typescript
+interface AIResponseContext {
+  // The trigger
+  trigger: {
+    type: 'user_post' | 'scheduled' | 'conversation_continue'
+    source_post?: Post
+    thread?: Post[]
+  }
+
+  // User context
+  user: {
+    profile: UserProfile
+    recent_posts: Post[]           // Last 10-20 posts
+    interaction_history: Post[]    // Previous exchanges with this persona
+    preferences: UserPreferences
+  }
+
+  // Persona context
+  persona: {
+    definition: DollhousePersona   // From MCP
+    memory_summary: string         // Compressed history
+    recent_posts: Post[]           // Last N posts to this user
+    topics_covered: string[]
+    propaganda_techniques_used: string[]
+  }
+
+  // Content context (for original posts)
+  content_sources?: {
+    validated_links: ValidatedLink[]
+    current_events: NewsItem[]
+    scheduled_topic?: string       // If propaganda education
+  }
+}
 ```
 
 ## Scaling Considerations
