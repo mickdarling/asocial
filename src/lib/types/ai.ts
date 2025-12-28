@@ -20,3 +20,19 @@ export interface AIResponse {
 	sentiment: 'positive' | 'neutral' | 'constructive';
 	generatedAt: Date;
 }
+
+export interface AIConversation {
+	id: string;
+	userId: string;
+	personaId: string;
+	messages: AIConversationMessage[];
+	startedAt: Date;
+	lastMessageAt: Date;
+}
+
+export interface AIConversationMessage {
+	id: string;
+	role: 'user' | 'ai';
+	content: string;
+	timestamp: Date;
+}

@@ -8,21 +8,30 @@ export interface Post {
 	updatedAt?: Date;
 	isConstructive: boolean;
 	isAIGenerated: boolean;
-	media?: Media[];
-	responses: Response[];
+	media?: MediaAttachment[];
+	responses: PostResponse[];
 }
 
-export interface Media {
+export interface MediaAttachment {
 	type: 'image' | 'video';
 	url: string;
 	alt?: string;
 }
 
-export interface Response {
+export interface PostResponse {
 	id: string;
 	postId: string;
 	authorId: string;
 	content: string;
 	createdAt: Date;
 	isAIGenerated: boolean;
+}
+
+export interface SharedPost {
+	id: string;
+	originalPostId: string;
+	sharedById: string;
+	sharedAt: Date;
+	comment?: string;
+	originalPost: Post;
 }
