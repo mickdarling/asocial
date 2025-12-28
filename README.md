@@ -4,6 +4,63 @@
 
 Asocial is an anti-propaganda social media platform designed to create a positive feedback loop of constructive discourse. Users interact with a familiar social media interface, but the underlying system promotes constructive engagement through AI moderation and response.
 
+## Development Setup
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Git
+
+### Getting Started
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/mickdarling/asocial.git
+   cd asocial
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Start development server**
+   ```bash
+   npm run dev
+   ```
+
+   The app will be available at http://localhost:5173
+
+4. **Build for production**
+   ```bash
+   npm run build
+   ```
+
+5. **Preview production build**
+   ```bash
+   npm run preview
+   ```
+
+### Project Structure
+
+```
+src/
+├── lib/
+│   ├── components/     # Reusable UI components
+│   ├── services/       # Business logic and API interactions
+│   ├── stores/         # Svelte stores for state management
+│   └── types/          # TypeScript type definitions
+├── routes/             # SvelteKit routes (pages)
+└── app.html            # HTML template
+```
+
+### Technology Stack
+
+- **Framework**: SvelteKit with TypeScript
+- **Styling**: Tailwind CSS
+- **Deployment Target**: Cloudflare Pages/Workers
+- **Architecture**: Clean Architecture principles
+
 ## Core Concept
 
 Traditional social media optimizes for engagement through outrage, division, and emotional manipulation. Asocial flips this model:
@@ -238,7 +295,7 @@ This license ensures that any modifications to the platform, especially when run
 
 ## Status
 
-**Early Concept Phase** - This project is currently being designed and documented.
+**Active Development** - The project structure has been established and we're building out core functionality.
 
 ---
 
