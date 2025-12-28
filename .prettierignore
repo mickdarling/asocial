@@ -4,3 +4,11 @@ dist/
 node_modules/
 package-lock.json
 pnpm-lock.yaml
+
+# DollhouseMCP cache (auto-generated)
+.dollhousemcp/
+
+# Existing docs (formatted before prettier config)
+# TODO: Remove these after reformatting in a separate PR
+docs/
+README.md
